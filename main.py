@@ -13,12 +13,12 @@ version='0.1'
 #  Class for tkinter Treeview and related functions
 class result_window:
 
-    def __init__(self, parent,stat, headings, name, view_func):
+    def __init__(self, parent,stat, headings, name):
         # Draw a treeview of a fixed type
         # self.viewer=viewer
         self.stat=stat
         self.parent=parent
-        self.view_func = view_func
+        # self.view_func = view_func
         self.fileList=[]
         self.tree = ttk.Treeview(self.parent, show='headings', columns=headings)
         self.tree.grid(sticky='NSEW')
@@ -108,11 +108,10 @@ class result_window:
 
 
 class MainArea(tk.Frame):
-    def __init__(self, master,stat,viewer, **kwargs):
+    def __init__(self, master,stat, **kwargs):
         tk.Frame.__init__(self, master, **kwargs)
 
         self.stat = stat
-        self.viewer = viewer
         # self.config = config
         self.overwrite = tk.IntVar()
 
@@ -155,9 +154,9 @@ class MainArea(tk.Frame):
 
         # Individual elements
         # Display results and status
-        self.result_tree = result_window(self.fr_results, stat, ['Number', 'Name', 'Status'], ['#', 'Name', 'Status'], self.analysis_view)
+        self.result_tree = result_window(self.fr_results, stat, ['Number', 'Name', 'Status'], ['#', 'Name', 'Datasets'])
         # Display ROIs
-        self.roi_tree = result_window(self.fr_roi_name, stat, ['Number', 'Name', 'Status'], ['#', 'ROI', 'Status'], self.roi_view)
+        self.roi_tree = result_window(self.fr_roi_name, stat, ['Number', 'Name', 'Status'], ['#', 'Tasks', 'Status'])
 
         # Display results and status
         # self.result_tree = result_window(self.f2, viewer, stat)
@@ -168,9 +167,6 @@ class MainArea(tk.Frame):
         # Controls
         el = fn.Elements(self.fr_firstlv)
         el.button("Database", self.selectPath, 1, 0, 0, tk.W + tk.E, 1)  # Selection of root directory
-        el.button("Select ROI", self.selectPath, 2, 0, 1, tk.W + tk.E, 1)  # Selection of ROI directory
-        el.button("Timecourse", self.generate_timecourse, '', 0, 2, tk.W + tk.E, 1)  # Generate time course
-        el.button("Generate Profile", self.generate_profile, '', 0, 3, tk.W + tk.E, 1)  # Generate profile
         el.button("Process", self.process, '', 0, 4, tk.W + tk.E, 1)  # Generate profile
 
 
@@ -190,43 +186,6 @@ class MainArea(tk.Frame):
         e2.button("Run Higher Level Analysis", self.higher_level, '', 0, 1, tk.W + tk.E, 1)  # Generate profile
 
 
-    def roi_gen(self, *args):
-        roif = roi_funcs.roif(self.fr_roi_gen_child,self.roi_path, self.roi_search, self.roi_tree, self.roi_name)
-        roi_option = self.option_var.get()
-
-        if roi_option == self.OptionList[1]:
-            self.clear_frame(self.fr_roi_gen_child)
-            roif.atlas_based()
-
-
-        if roi_option == self.OptionList[2]:
-            self.clear_frame(self.fr_roi_gen_child)
-            roif.group()
-
-        if roi_option == self.OptionList[3]:
-            self.clear_frame(self.fr_roi_gen_child)
-            roif.peak_individual()
-
-        if roi_option == self.OptionList[4]:
-            self.clear_frame(self.fr_roi_gen_child)
-            roif.geometry_based()
-
-    def roi_view(self,roi):
-        command = ['fsleyes','-cs','-std',roi]
-        command_except = ['fsleyes','-std',roi]
-        self.update_idletasks()
-        try:
-            fn.appFuncs.thread(command,True)
-        except:
-            fn.appFuncs.thread(command_except, True)
-
-    def analysis_view(self,sel):
-        # roi = self.roi_tree.selection
-        subject = self.result_tree.selection
-        path = Path(subject)/f'{fn.appFuncs.generate_analysis_name(self.roi_tree)}.feat'
-        images = sorted(Path(path).rglob('rendered_thresh_zstat*.png'))
-        im_list = [i for i in images]
-        self.viewer.display(im_list,1)
 
 #####  Main tasks ########################################
         # method for calling directory picker
@@ -235,14 +194,9 @@ class MainArea(tk.Frame):
         self.root = Path(__file__).parent.absolute()
 
         if test_case == 1:
-            self.roi_path = self.roi_tree.file_path = self.root/'test_data'/'PPI'
-            self.file_path = self.root/'test_data'/'Subject'
-            self.higherlevel_directory = self.root/'test_data'/'PPI_grp_level'
+            self.file_path = self.root/'test_data'
+            self.higherlevel_directory = self.root/'test_data'/'grp_level'
 
-        if test_case == 2:
-            self.roi_path = self.roi_tree.file_path = '/home/quest/Desktop/aNMT_pre_withICAaroma/ManuscriptAnalyses/ROI/'
-            self.file_path = '/home/quest/Desktop/aNMT_pre_withICAaroma/'
-            self.higherlevel_directory = '/home/quest/Desktop/aNMT_pre_withICAaroma/PPI_grp_level/'
         else:
             path = fn.appFuncs.selectPath()
             if var == 1:
@@ -252,44 +206,42 @@ class MainArea(tk.Frame):
             if var == 3:
                 self.higherlevel_directory = path
 
-            self.stat.set('Selected Path: %s', path)
-            # print(var)
-            # self.file_path = var
+        self.stat.set('Selected Path: %s', self.file_path)
         # self.result_tree.file_path = self.file_path
 
 
-        # executed on clicking search button, this function lists all the datasets
-
-    def roi_search(self):
-        #  ROI Search
-        r_list = sorted(Path(self.roi_path).glob(f'*.nii*'))
-        roi_list = []
-        self.roi_tree.fileList = roi_list
-        for j in r_list:
-            roi_list.append([j, 100])
-        self.roi_tree.file_path = self.roi_path
-        self.roi_tree.display()
-        self.roi_tree.fileList = roi_list
-
+   # executed on clicking search button, this function lists all the subjects in the directory
     def search(self):
-        self.roi_search()
+        self.tasks_list =[]
         ##############################
         self.result_tree.file_path = self.file_path
         search_str = self.search_str.get()
-        search_str = search_str.split('-')
-        search_inc = search_str[0]
-        self.search_omit = ''
-        if len(search_str) > 1: self.search_omit = search_str[1]
 
-        identifier = f'*{search_inc}*.feat'
-        if search_inc == '':identifier = f'*.feat'
+        # search_str = search_str.split('-')
+        # search_inc = search_str
+        # self.search_omit = ''
+        # if len(search_str) > 1: self.search_omit = search_str[1]
+
+        identifier = f'*{search_str}*.nii*'
+        if search_str == '':identifier = f'*.nii*'
+
+
+
+
 
         # Search for all files that match task
         search_list = sorted(Path(self.file_path).rglob(f'{identifier}'))
         filtered_list = self.apply_omit(search_list)
         filtered_list = self.apply_filters(search_list)
         self.result_tree.fileList = self.aggregated_list(filtered_list)
+
+
+
         self.result_tree.display()  # display the results
+
+
+
+
 
     def generate_timecourse1(self):
         self.analysis_name.set(fn.appFuncs.generate_analysis_name(self.roi_tree))
@@ -495,7 +447,7 @@ class MainArea(tk.Frame):
             fl = file_list
         return fl
 
-    def apply_filters(self,file_list):
+    def apply_filters(self, file_list):
         filters = self.filters.get()
         if len(filters) != 0:
             filters = filters.split(";")
@@ -507,7 +459,7 @@ class MainArea(tk.Frame):
     def aggregated_list(self, filtered_list):
         fl = []
         for row in filtered_list:
-            fl.append([row,1])
+            fl.append([row, 1])
         return fl
 
 ################################################################
@@ -583,14 +535,11 @@ class MainApp(tk.Frame):
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
 
-        # draw a viewer window
-        viewer_root=tk.Toplevel()
-
         # Components
-        self.viewer = fn.Viewer(viewer_root)
+        # self.viewer = fn.Viewer(viewer_root)
         # self.menubar = Menubar(parent,self.config)
         self.statusbar = StatusBar(parent)
-        self.mainarea = MainArea(parent, self.statusbar, self.viewer, borderwidth=1, relief=tk.RAISED)
+        self.mainarea = MainArea(parent, self.statusbar,  borderwidth=1, relief=tk.RAISED)
 
         # configurations
         self.mainarea.grid(column=0, row=0, sticky='WENS')
