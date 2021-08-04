@@ -16,10 +16,11 @@ class result_window:
     def __init__(self, parent,stat, headings, name):
         # Draw a treeview of a fixed type
         # self.viewer=viewer
-        self.stat=stat
-        self.parent=parent
+        self.stat = stat
+        self.parent = parent
         # self.view_func = view_func
-        self.fileList=[]
+        self.fileList = []
+        self.file_path = []
         self.tree = ttk.Treeview(self.parent, show='headings', columns=headings)
         self.tree.grid(sticky='NSEW')
         for n in range(len(name)):
@@ -44,14 +45,16 @@ class result_window:
         self.rel=[]
         for row in self.fileList:
             # print(row)
-            inPath = row[0]
+            inPath = row[0][1]
 
             # pvp = row[3]
             # pop = row[4]
 
-            p1 = inPath.relative_to(self.file_path)
-            disp = '  >>  '.join(p1.parts)
-            self.tree.insert("", index, iid, values=(iid + 1, disp))
+            # p1 = inPath.relative_to(self.file_path)
+            # disp = '  >>  '.join(p1.parts)
+
+
+            self.tree.insert("", index, iid, values=(iid + 1, inPath))
 
             index = iid = index + 1
 
@@ -82,11 +85,12 @@ class result_window:
 
     def left_click(self, event):
         iid = self.tree.identify_row(event.y)
+
         self.clickID = iid
         if not iid == '':
             iid = int(iid)
             self.selection = self.fileList[iid][0]
-            self.selection_name = Path(Path(self.selection).stem).stem
+
 
     def double_left_click(self, event):
         iid = self.clickID
@@ -147,16 +151,16 @@ class MainArea(tk.Frame):
         self.fr_results.rowconfigure(0, weight=1)
 
         # Frame for ROI Tree View
-        self.fr_roi_name = tk.Frame(self, borderwidth=0, relief='raised', pady=10, padx = 2)
-        self.fr_roi_name.grid(row=1, column=1, sticky='NSEW')
+        self.fr_task_name = tk.Frame(self, borderwidth=0, relief='raised', pady=10, padx = 2)
+        self.fr_task_name.grid(row=1, column=1, sticky='NSEW')
         # self.f3.columnconfigure(0, weight=.5)
-        self.fr_roi_name.rowconfigure(0, weight=1)
+        self.fr_task_name.rowconfigure(0, weight=1)
 
         # Individual elements
         # Display results and status
         self.result_tree = result_window(self.fr_results, stat, ['Number', 'Name', 'Status'], ['#', 'Name', 'Datasets'])
         # Display ROIs
-        self.roi_tree = result_window(self.fr_roi_name, stat, ['Number', 'Name', 'Status'], ['#', 'Tasks', 'Status'])
+        self.task_tree = result_window(self.fr_task_name, stat, ['Number', 'Name', 'Status'], ['#', 'Tasks', 'Status'])
 
         # Display results and status
         # self.result_tree = result_window(self.f2, viewer, stat)
@@ -167,7 +171,10 @@ class MainArea(tk.Frame):
         # Controls
         el = fn.Elements(self.fr_firstlv)
         el.button("Database", self.selectPath, 1, 0, 0, tk.W + tk.E, 1)  # Selection of root directory
-        el.button("Process", self.process, '', 0, 4, tk.W + tk.E, 1)  # Generate profile
+        el.button("Brain extraction", self.brain_extraction, '', 0, 2, tk.W + tk.E, 1)  # Brain extraction
+        el.button("Process", self.process, '', 0, 4, tk.W + tk.E, 1)  # Process dataset
+        el.button("Set Structural", self.set_structural, '', 4, 4, tk.W + tk.E, 1)  # Select dataset corresponding to
+        # structural scan for BET and registration
 
 
         self.search_str = el.textField("Identifier", 20, 1, 0)  # Task or Dataset to be searched for
@@ -185,6 +192,7 @@ class MainArea(tk.Frame):
         e2.button("Output Location", self.selectPath, 3, 0, 0, tk.W + tk.E, 1)  # Selection of output directory
         e2.button("Run Higher Level Analysis", self.higher_level, '', 0, 1, tk.W + tk.E, 1)  # Generate profile
 
+        self.prevselection = '0'
 
 
 #####  Main tasks ########################################
@@ -206,45 +214,58 @@ class MainArea(tk.Frame):
             if var == 3:
                 self.higherlevel_directory = path
 
+        self.result_tree.file_path = self.file_path
         self.stat.set('Selected Path: %s', self.file_path)
         # self.result_tree.file_path = self.file_path
+        self.search_subjects()
 
-
-   # executed on clicking search button, this function lists all the subjects in the directory
-    def search(self):
-        self.tasks_list =[]
-        ##############################
-        self.result_tree.file_path = self.file_path
-        search_str = self.search_str.get()
-
-        # search_str = search_str.split('-')
-        # search_inc = search_str
-        # self.search_omit = ''
-        # if len(search_str) > 1: self.search_omit = search_str[1]
-
-        identifier = f'*{search_str}*.nii*'
-        if search_str == '':identifier = f'*.nii*'
-
-
-
-
-
-        # Search for all files that match task
-        search_list = sorted(Path(self.file_path).rglob(f'{identifier}'))
-        filtered_list = self.apply_omit(search_list)
-        filtered_list = self.apply_filters(search_list)
-        self.result_tree.fileList = self.aggregated_list(filtered_list)
-
-
-
+    def search_subjects(self):
+        self.subject_names = []
+        self.subject_list = []
+        for item in Path(self.file_path).iterdir():
+            self.subject_names.append(item.name)
+            self.subject_list.append([item, item.name])
+        # print(self.subject_names)
+        self.result_tree.fileList = self.aggregated_list(self.subject_list)
         self.result_tree.display()  # display the results
+        self.search_tasks()
+
+    def search_tasks(self):
+
+        self.task_list = []
+        for pa in self.result_tree.fileList:
+            tasks =[]
+            task_list = []
+
+            scan = Path(pa[0][0]).rglob(f'*.nii*')
+            tasks = [Path(t).name for t in scan]
+            task_list += tasks
+
+        for word in task_list:
+            if word not in self.task_list:
+                self.task_list.append(['', word])
+        # print(self.task_list)
+
+        self.task_tree.fileList = self.aggregated_list(self.task_list)
+        self.task_tree.display()  # display the results
+
+    def set_structural(self):
+        self.structural_scan = [self.task_tree.selection[1], self.task_tree.clickID]
+        self.task_tree.status(self.structural_scan[1], 'Structural')
+        if not (self.prevselection == self.structural_scan[1]):
+            self.task_tree.status(self.prevselection, '')
+        self.prevselection = self.task_tree.clickID
 
 
 
+
+
+    def brain_extraction(self):
+        pass
 
 
     def generate_timecourse1(self):
-        self.analysis_name.set(fn.appFuncs.generate_analysis_name(self.roi_tree))
+        self.analysis_name.set(fn.appFuncs.generate_analysis_name(self.task_tree))
 
         self.subject_output = []
         # roi_name = self.roi_tree.selection_name
@@ -258,9 +279,9 @@ class MainArea(tk.Frame):
     def generate_timecourse(self):
         # self.analysis_name.set = f'PPI_{roi_name}.feat'
 
-        roi = self.roi_tree.selection
-        roi_name = self.roi_tree.selection_name
-        self.analysis_name.set(fn.appFuncs.generate_analysis_name(self.roi_tree))
+        roi = self.task_tree.selection
+        roi_name = self.task_tree.selection_name
+        self.analysis_name.set(fn.appFuncs.generate_analysis_name(self.task_tree))
 
         cluster_name_unbin = roi_name + '_unbin_native.nii.gz'
         cluster_name_bin = roi_name + '_bin_native.nii.gz'
@@ -301,7 +322,7 @@ class MainArea(tk.Frame):
         command_list_sec = []
         self.subject_output=[]
         id = 1
-        roi_name = self.roi_tree.selection_name
+        roi_name = self.task_tree.selection_name
         self.output_dir_name = f'{self.analysis_name.get()}.feat'
         for row in self.result_tree.fileList:
             subject = row[0]
@@ -360,7 +381,7 @@ class MainArea(tk.Frame):
 
 
     def higher_level(self):
-        roi_name = self.roi_tree.selection_name
+        roi_name = self.task_tree.selection_name
         self.stat.set('Select location of output')
         # output_directory = fn.appFuncs.selectPath()
         higherlevel_directory = '/home/quest/Desktop/aNMT_pre_withICAaroma/PPI_grp_level/'
@@ -370,7 +391,7 @@ class MainArea(tk.Frame):
         subject_output = []
         for row in self.result_tree.fileList:
             subject = row[0]
-            path = Path(subject)/f'{fn.appFuncs.generate_analysis_name(self.roi_tree)}.feat'
+            path = Path(subject)/f'{fn.appFuncs.generate_analysis_name(self.task_tree)}.feat'
             subject_output.append(path)
 
         number = len(self.result_tree.fileList)
