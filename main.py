@@ -3,7 +3,7 @@ from tkinter import filedialog, ttk
 from pathlib import Path
 import functions as fn
 #from bs4 import BeautifulSoup
-import subprocess, roi_funcs, json, threading, statistics, time, webbrowser, os, re
+import subprocess, json, threading, statistics, time, webbrowser, os, re
 import concurrent.futures
 
 test_case = 1
@@ -13,16 +13,18 @@ version='0.1'
 #  Class for tkinter Treeview and related functions
 class result_window:
 
-    def __init__(self, parent,stat, headings, name):
+    def __init__(self, parent,stat, headings, name, view_func):
         # Draw a treeview of a fixed type
         # self.viewer=viewer
         self.stat = stat
         self.parent = parent
-        # self.view_func = view_func
+        self.view_func = view_func
         self.fileList = []
         self.file_path = []
         self.tree = ttk.Treeview(self.parent, show='headings', columns=headings)
         self.tree.grid(sticky='NSEW')
+        s = ttk.Style()
+        s.configure('Treeview',rowheight=30)
         for n in range(len(name)):
             self.tree.heading(headings[n], text=name[n])
         self.tree.column(headings[0], width=30, stretch=tk.NO, anchor='e')
@@ -89,7 +91,7 @@ class result_window:
         self.clickID = iid
         if not iid == '':
             iid = int(iid)
-            self.selection = self.fileList[iid][0]
+            self.current_selection = self.fileList[iid][0]
 
 
     def double_left_click(self, event):
@@ -97,7 +99,7 @@ class result_window:
         if not iid == '':
             iid = int(iid)
             # self.selection = self.fileList[iid][0]
-            self.view_func(self.selection)
+            self.view_func(self.current_selection)
 
 
 
@@ -158,9 +160,9 @@ class MainArea(tk.Frame):
 
         # Individual elements
         # Display results and status
-        self.result_tree = result_window(self.fr_results, stat, ['Number', 'Name', 'Status'], ['#', 'Name', 'Datasets'])
-        # Display ROIs
-        self.task_tree = result_window(self.fr_task_name, stat, ['Number', 'Name', 'Status'], ['#', 'Tasks', 'Status'])
+        self.result_tree = result_window(self.fr_results, stat, ['Number', 'Name', 'Status'], ['#', 'Name', 'Datasets'], self.extraction_view)
+        # Display tasks
+        self.task_tree = result_window(self.fr_task_name, stat, ['Number', 'Name', 'Status'], ['#', 'Tasks', 'Status'], self.extraction_view)
 
         # Display results and status
         # self.result_tree = result_window(self.f2, viewer, stat)
@@ -171,20 +173,23 @@ class MainArea(tk.Frame):
         # Controls
         el = fn.Elements(self.fr_firstlv)
         el.button("Database", self.selectPath, 1, 0, 0, tk.W + tk.E, 1)  # Selection of root directory
-        el.button("Brain extraction", self.brain_extraction, '', 0, 2, tk.W + tk.E, 1)  # Brain extraction
+        el.button("Brain extraction", self.brain_extraction, '', 2, 2, tk.W + tk.E, 1)  # Brain extraction
+        el.button("Generate Profiles", self.generate_profile, '', 0, 2, tk.W + tk.E, 1)  # Brain extraction
         el.button("Process", self.process, '', 0, 4, tk.W + tk.E, 1)  # Process dataset
         el.button("Set Structural", self.set_structural, '', 4, 4, tk.W + tk.E, 1)  # Select dataset corresponding to
         # structural scan for BET and registration
 
 
-        self.search_str = el.textField("Identifier", 20, 1, 0)  # Task or Dataset to be searched for
-        self.filters = el.textField("Filters", 20, 1, 1)  # keywords to filter individual datasets
+        self.bet_thresh = el.textField("BET Frac. Int. Threshold", 5, 1, 0)  # Task or Dataset to be searched for
+        self.bet_grad_thresh = el.textField("BET Grad. Threshold", 5, 1, 1)  # Task or Dataset to be searched for
+        # self.filters = el.textField("Filters", 20, 1, 1)  # keywords to filter individual datasets
         self.analysis_name = tk.StringVar()
         # self.analysis_name.set('Hello')
-        self.analysis_box = el.textField_var("Analysis Name", self.analysis_name, 20, 1, 3)  # Task or Dataset to be searched for
+        # self.analysis_box = el.textField_var("Analysis Name", self.analysis_name, 20, 1, 3)  # Task or Dataset to be searched for
 
-        el.button("Search", self.search, '', 3, 0, tk.N + tk.S, 1)  # button press to start search
-        el.button("Clear", self.search, '', 3, 1, tk.N, 1)  # button press to clear selection
+
+        # el.button("Search", self.search, '', 3, 0, tk.N + tk.S, 1)  # button press to start search
+        # el.button("Clear", self.search, '', 3, 1, tk.N, 1)  # button press to clear selection
         # el.check('Overwrite', self.overwrite, 4, 1)  # checkbox for overwrite option
 
         ## Higher Level Analysis
@@ -231,86 +236,83 @@ class MainArea(tk.Frame):
         self.search_tasks()
 
     def search_tasks(self):
-
+        task_list = []
+        unique_list = []
         self.task_list = []
         for pa in self.result_tree.fileList:
-            tasks =[]
-            task_list = []
 
             scan = Path(pa[0][0]).rglob(f'*.nii*')
             tasks = [Path(t).name for t in scan]
             task_list += tasks
 
         for word in task_list:
-            if word not in self.task_list:
-                self.task_list.append(['', word])
-        # print(self.task_list)
-
+            if word not in unique_list:
+                unique_list.append(word)
+        self.task_list = [['',item] for item in unique_list]
         self.task_tree.fileList = self.aggregated_list(self.task_list)
         self.task_tree.display()  # display the results
 
     def set_structural(self):
-        self.structural_scan = [self.task_tree.selection[1], self.task_tree.clickID]
+        self.structural_scan = [self.task_tree.current_selection[1], self.task_tree.clickID]
         self.task_tree.status(self.structural_scan[1], 'Structural')
+        # if structural scan needs to be changed to a new one
         if not (self.prevselection == self.structural_scan[1]):
             self.task_tree.status(self.prevselection, '')
         self.prevselection = self.task_tree.clickID
 
 
 
-
-
     def brain_extraction(self):
-        pass
+        commands = []
+        self.stat.set('Performing brain extraction ...')
+
+        queue = self.result_tree.queue()
+
+        for row in queue:
+            subject = row[0][0]
+            # samp = Path(subject).rglob(self.structural_scan[0])
+            # for s in samp: self.sample = s
+            # temp = str(self.sample).split('.nii')
+            # sample_output = temp[0] + '_brain.nii.gz'
+            sample_output = self.get_structural(subject)
+            command = ['bet', str(self.sample), sample_output, '-R', '-f', self.bet_thresh.get(), '-g',
+                       self.bet_grad_thresh.get(), '-o']
+            # print(command)
+            commands.append(command)
+
+        print(commands)
+        self.threader_s(commands)
+        self.stat.set('Brain extraction completed')
+        self.sample_output = sample_output;
+
+    def get_structural(self,subject):
+        samp = Path(subject).rglob(self.structural_scan[0])
+        for s in samp: sample = s
+        temp = str(sample).split('.nii')
+        subject_structural = temp[0] + '_brain.nii.gz'
+        return subject_structural
 
 
-    def generate_timecourse1(self):
-        self.analysis_name.set(fn.appFuncs.generate_analysis_name(self.task_tree))
+    #     add visualizer for the output
+    def extraction_view(self, subject):
+        suffix = str(self.structural_scan[0]).split('.nii')
+        bet_output = suffix[0] + '_brain.nii.gz'
 
-        self.subject_output = []
-        # roi_name = self.roi_tree.selection_name
-        self.output_dir_name = f'{self.analysis_name.get()}.feat'
-        for row in self.result_tree.fileList:
-            subject = row[0]
-            output_dir = subject / self.output_dir_name
-            self.subject_output.append(output_dir)
-        # print(self.subject_output)
-    #  generates time course for each user in the list
-    def generate_timecourse(self):
-        # self.analysis_name.set = f'PPI_{roi_name}.feat'
+        base_search = Path(subject[0]).rglob(self.structural_scan[0])
+        for b in base_search: base = b
+        mask_search = Path(subject[0]).rglob(bet_output)
+        for m in mask_search: mask = m
 
-        roi = self.task_tree.selection
-        roi_name = self.task_tree.selection_name
-        self.analysis_name.set(fn.appFuncs.generate_analysis_name(self.task_tree))
+        command = ['fsleyes', '-cs', '-std', str(base), str(mask), '-cm','blue']
 
-        cluster_name_unbin = roi_name + '_unbin_native.nii.gz'
-        cluster_name_bin = roi_name + '_bin_native.nii.gz'
-        timecourse_name = f'timecourse_{roi_name}.txt'
-        command_list = []
+        print(command)
+        command_except = ['fsleyes', '-std', str(base), str(mask), '-cm','blue']
+        self.update_idletasks()
+        try:
+            fn.appFuncs.thread(command, True)
+        except:
+            fn.appFuncs.thread(command_except, True)
 
-
-
-        for row in self.result_tree.fileList:
-            file = row[0]
-            subject = file
-            # subject = Path(file).parent
-            ex2std_mat = subject / 'reg' / 'example_func2standard.mat'
-            mat_file = subject / 'reg' / 'standard2example_func_tr.mat'
-            ref = subject/  'reg' /'example_func.nii.gz'
-            ref_ffd = subject/'filtered_func_data.nii.gz'
-            # print(f'File : {subject}    and cluster name unbin is {cluster_name_unbin}')
-
-            transformation = ['convert_xfm', '-omat', mat_file, '-inverse', ex2std_mat]
-            flirt = ['flirt', '-in', roi, '-init',mat_file, '-ref', ref, '-applyxfm', '-out',  subject/cluster_name_unbin]
-            maths = ['fslmaths', subject/cluster_name_unbin, '-bin', subject/cluster_name_bin]
-            meants = ['fslmeants', '-i', ref_ffd, '-o', subject/timecourse_name, '-m', subject/cluster_name_bin]
-
-            command_list.append([transformation, flirt, maths, meants])
-
-        self.threader(command_list)
-        print('Timecourses Generated!')
-        self.stat.set('Timecourses Generated!')
-        self.analysis_name
 
 
 
@@ -322,31 +324,33 @@ class MainArea(tk.Frame):
         command_list_sec = []
         self.subject_output=[]
         id = 1
-        roi_name = self.task_tree.selection_name
-        self.output_dir_name = f'{self.analysis_name.get()}.feat'
-        for row in self.result_tree.fileList:
-            subject = row[0]
-            # output_dir = subject / f'PPI_{roi_name}.feat'
-            output_dir = subject / self.output_dir_name
-            subject_dir = subject / 'filtered_func_data'
-            subject_timecourse = subject / f'timecourse_{roi_name}.txt'
-            self.subject_output.append(output_dir)
-            # out_ct = 1
-            # while Path(output_dir).is_dir():
-            #     output_dir = subject / f'{self.analysis_name.get()}_{out_ct}.feat'
-            #     out_ct += 1
+        queue = self.result_tree.queue()
+        self.task_name = (str(self.task_tree.current_selection[1]).split('.nii'))[0]
+        self.output_dir_name = f'subject_level_{self.task_name}.feat'
 
+        for row in queue:
+            subject = row[0][0]
+            # output_dir = subject / f'PPI_{roi_name}.feat'
+            output_dir = Path(subject) / self.output_dir_name
+            input_data_search = Path(subject).rglob(f'{self.task_tree.current_selection[1]}')
+            for s in input_data_search: input_data = s
+            subject_structural = self.get_structural(subject)
+
+
+            self.subject_output.append(output_dir)
+
+        #   Set up for sample subject different than others
             if id == 1:
                 sample_profile = self.root / 'sample_design.fsf'
                 base_profile = self.root / 'temp' / 'temp_design.fsf'
                 subprocess.run(['cp', sample_profile, base_profile])
-
-                # read in the base profile
-                files = [base_profile, output_dir, subject_dir, subject_timecourse]
+        #
+        #         # read in the base profile
+                files = [base_profile, output_dir, input_data, subject_structural]
                 self.replace(files, 1)
                 command = ['feat', base_profile]
-                # command_list.append([command])
-                # Open Feat setup in FSL with this reference file
+        #         # command_list.append([command])
+        #         # Open Feat setup in FSL with this reference file
                 subprocess.run(['Feat', base_profile])
                 # reverse the subject specific paths
                 self.replace(files, 2)
@@ -354,45 +358,45 @@ class MainArea(tk.Frame):
             subject_profile = self.root / 'temp' / f'temp_{id}.fsf'
             subprocess.run(['cp', base_profile, subject_profile])
             # read in and modify the subject profile
-            files = [subject_profile, output_dir, subject_dir, subject_timecourse]
+            files = [subject_profile, output_dir, input_data, subject_structural]
             self.replace(files, 1)
             command = ['feat', subject_profile]
-            command_list.append([command])
-
-            reg = Path(subject)/'reg'
-            reg_std = Path(subject)/'reg_standard'
-            command = ['cp','-r', reg, reg_std, output_dir]
-            command_list_sec.append([command])
-
+            command_list.append(command)
+        #
+        #     reg = Path(subject)/'reg'
+        #     reg_std = Path(subject)/'reg_standard'
+        #     command = ['cp','-r', reg, reg_std, output_dir]
+        #     command_list_sec.append([command])
+        #
             id += 1
-
+        #
         self.command_list_process = command_list
-        self.command_list_sec_process = command_list_sec
-        # print(command_list)
+        # self.command_list_sec_process = command_list_sec
+        print(command_list)
 
     def process(self):
-        self.threader(self.command_list_process)
+        self.threader_s(self.command_list_process)
         # self.process_commands_seq(self.command_list_process)
         # empty the temp folder
         self.clear_dir(self.root/'temp')
         self.stat.set('Processing completed!')
         print('Processing completed!')
-        self.process_commands_seq(self.command_list_sec_process)
+        # self.process_commands_seq(self.command_list_sec_process)
 
 
     def higher_level(self):
-        roi_name = self.task_tree.selection_name
         self.stat.set('Select location of output')
         # output_directory = fn.appFuncs.selectPath()
-        higherlevel_directory = '/home/quest/Desktop/aNMT_pre_withICAaroma/PPI_grp_level/'
-        output_dir = Path(self.higherlevel_directory)/roi_name
-        self.stat.set('Output location set')
+        higherlevel_directory = '/home/quest/Drive/Emory/Development/MRANS/Program/mrans/test_data/Group_Analysis/'
+        output_dir = Path(self.higherlevel_directory)/self.task_name
+        self.stat.set(f'Output location set to {output_dir}')
 
         subject_output = []
         for row in self.result_tree.fileList:
             subject = row[0]
-            path = Path(subject)/f'{fn.appFuncs.generate_analysis_name(self.task_tree)}.feat'
-            subject_output.append(path)
+            path = Path(subject)/f'{self.task_name}.feat'
+            if Path(path).is_dir():
+                subject_output.append(path)
 
         number = len(self.result_tree.fileList)
 
@@ -443,7 +447,7 @@ class MainArea(tk.Frame):
                 fin.write(line)
 
         command = ['Feat',group_profile]
-        subprocess.run(command)
+        # subprocess.run(command)
 
 
     @staticmethod
@@ -489,7 +493,7 @@ class MainArea(tk.Frame):
         profile = files[0]
         output_dir = files[1]
         subject_dir = files[2]
-        subject_timecourse = files[3]
+        subject_structural = files[3]
 
         fin = open(profile, "rt")
         data = fin.read()
@@ -497,12 +501,12 @@ class MainArea(tk.Frame):
         if type ==1:
             data = data.replace('#%#', str(output_dir))
             data = data.replace('#$#', str(subject_dir))
-            data = data.replace('#!#', str(subject_timecourse))
+            data = data.replace('#!#', str(subject_structural))
         else:
             print(subject_dir)
             data = data.replace(str(output_dir), '#%#')
             data = data.replace(str(subject_dir), '#$#')
-            data = data.replace(str(subject_timecourse), '#!#')
+            data = data.replace(str(subject_structural), '#!#')
         fin.close()
 
         fin = open(profile, "wt")
@@ -522,12 +526,21 @@ class MainArea(tk.Frame):
 
     def process_commands(self, command):
         for f in command:
+            print(f)
             subprocess.run(f)
 
     def process_commands_seq(self, command):
         for a in command:
             for f in a:
                 subprocess.run(f)
+
+
+    def threader_s(self,queue):
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            executor.map(self.process_commands_s, queue)
+
+    def process_commands_s(self, command):
+            subprocess.run(command)
 
 #-----------------------------------------------------------------------------------------------------------------------
 
