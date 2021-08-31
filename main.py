@@ -230,13 +230,17 @@ class MainArea(tk.Frame):
 
         self.prevselection = '0'
 
+        self.root = Path(__file__).parent.absolute()
+        tmp_path = Path(self.root)/'temp'
+        if not Path(tmp_path).is_dir():
+            os.mkdir(tmp_path)
+
+
 
 #####  Main tasks ########################################
         # method for calling directory picker
 
     def selectPath(self, var):
-        self.root = Path(__file__).parent.absolute()
-
         if test_case == 1:
             self.file_path = self.root/'test_data'
             self.higherlevel_directory = self.root/'test_data'/'grp_level'
