@@ -50,7 +50,7 @@ class Elements:
     def popupMenu(self, charVariable,choices,x_,y_,width,stick):
         popupMenu=tk.OptionMenu(self.master, charVariable, *choices)
         popupMenu.configure(width=width)
-        popupMenu.grid(row=y_,column=x_,sticky=stick)
+        popupMenu.grid(row=y_, column=x_, sticky=stick)
         # self.labelMenu=tk.Label(self.master,text=label)
         # self.labelMenu.grid(row=y_, column=x_-1)
 
